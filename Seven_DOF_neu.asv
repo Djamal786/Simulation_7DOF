@@ -1,0 +1,124 @@
+clear
+clc
+close all
+
+%%
+syms r_x(theta) r_y(theta) r_z(theta) rot_x(theta) rot_y(theta) rot_z(theta) tran(d) d_x(delt)
+
+r_x(theta) = [1,0,0;0,cos(theta),-sin(theta);0,sin(theta),cos(theta)];
+r_y(theta) = [cos(theta),0,sin(theta);0,1,0;-sin(theta),0,cos(theta)];
+r_z(theta) = [cos(theta),-sin(theta),0;sin(theta),cos(theta),0;0,0,1];
+
+rot_x(theta) = [r_x(theta), zeros(3,1); zeros(1,3), 1];
+rot_y(theta) = [r_y(theta), zeros(3,1); zeros(1,3), 1];
+rot_z(theta) = [r_z(theta), zeros(3,1); zeros(1,3), 1];
+
+
+
+d = sym('d',[3 1]);
+tran(d) = [eye(3), d;  zeros(1,3), 1];
+
+d_x(delt) = tran(delt,0,0);
+d_y(delt) = tran(0,delt,0);
+d_z(delt) = tran(0,0,delt);
+
+%%
+n = 7;
+q = sym('q',[n 1]);
+dq = sym('dq',[n 1]); 
+ddq = sym('ddq',[n 1]);
+d = sym('d',[2 1]);
+l = sym('l',size(q));
+m = sym('m',size(q));
+dh_par = [0, pi/2 , 0, q(1);
+          0, -pi/2, 0, q(2)
+          0, -pi/2, d(1), q(3)
+          0, pi/2, 0, q(4)
+          0, pi/2, d(2), q(5)
+          0,-pi/2, 0, q(6)
+          0, 0, 0, q(7)];
+c_xyz = reshape([sym('cx',[1 7]); sym('cy',[1 7]); sym('cz',[1 7])],21,1)
+I_i = sym(zeros(3,3,length(q)));
+for i = 1:length(q)
+    I_i(:,:,i) = diag(sym(['i_',num2str(i)],[3,1]));
+end
+squeeze(I_i)
+size(reshape(I_i,63,1))
+
+smplfy = 1;  
+
+
+%% Forward kinematics of n-link
+T_i = sym(zeros(4,4,length(q)));
+for i = 1:length(q)
+    T_i(:,:,i) = eye(4);
+end
+    A = A_DH(1,dh_par);
+    T_i(:,:,1) = T_i(:,:,1) * A 
+
+for i = 2:length(q)
+    A = A_DH(i,dh_par);
+    T_i(:,:,i) = T_i(:,:,i-1) * A
+end
+
+importfile("C:\Users\djama\Downloads\ref_fwd_kin_7dof_std_dh_alg (2).mat")
+T_i - T_ref_i
+    simplify(T_i - T_ref_i)
+   
+
+     
+
+%% Velocities
+dq = sym('dq',size(q));
+
+% v = R dp/dt = R dp/dq dq/dt 
+v_i = sym(zeros(3,length(q)));
+for i = 1:length(q)
+    v_i(:,i) = T_i(1:3,1:3,i) * jacobian(T_i(1:3,4,i),q) * dq;
+end
+
+% tilde(omega) = R^T dR/dt
+omega_i = sym(zeros(3,length(q)));
+for i = 1:length(q)
+    omega_i(:,i) = cmp_omega(T_i(1:3,1:3,i),q,dq);
+end
+
+%% Kinetic energy
+
+% link MOIs (alignment with principle axis coordinate system + rotational symmetries assumed)
+I_i = sym(zeros(3,3,length(q)));
+for i = 1:length(q)
+    I_i(:,:,i) = diag(sym(['i_',num2str(i)],[3,1]));
+end
+
+% Kinetic energy (no eccentricities/displacements)
+E_kin = sym(0);
+for i = 1:length(q)
+    E_kin = E_kin + (omega_i(:,i).')*I_i(:,:,i)*omega_i(:,i) + m(i)*(v_i(:,i).')*v_i(:,i);
+end
+E_kin = 1/2*E_kin;%simplify(1/2*E_kin);
+
+%% Potential energy
+% Gravitational potential (force in positive z-direction)
+gp = sym('g');
+U_g = 0;
+for i = 1:length(q)
+    l_sum = 0;
+    for j = 1:i-1
+        l_sum = l_sum + l(j);
+    end
+    l_sum = l_sum + l(i)/2;
+    U_g = U_g + simplify(m(i) * gp * (l_sum - [0,0,1] * T_i(1:3,4,i)));
+end
+% m * g * (h_1 + h_2)
+% h_1 = -x_1_fixed, x_1_fixed = x_B - r_1 --> h_1 = -x_B + r_1
+
+%% Dynamics
+
+[M,C,g] = dyn_MCg_model(E_kin,U_g,q,dq);
+
+if smplfy
+    M = simplify(M);
+    C = simplify(C);
+    g = simplify(g);
+end

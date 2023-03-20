@@ -1,0 +1,15 @@
+robot = importrobot('iiwa14.urdf');
+test = struct('JointPositions',cell(1,7))
+
+qPositions = num2cell(qSim7);
+%trajectoryData.Q = num2cell(trajectoryData.Q)
+for i = 1:100
+     config = homeConfiguration(robot)
+     %config.JointPosition = trajectoryData.Q;   
+     for j = 1:7
+        config(j).JointPosition = qSim7(j,i)
+     end
+    show(robot,config);
+    drawnow
+end
+  
